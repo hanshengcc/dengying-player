@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../api/emby_api.dart';
 import '../api/models.dart';
+import '../l10n/app_localizations.dart';
 import '../state/app_state.dart';
 import '../widgets/poster_card.dart';
 import 'detail_page.dart';
@@ -74,8 +75,8 @@ class _SearchPageState extends State<SearchPage> {
         title: TextField(
           controller: _controller,
           autofocus: true,
-          decoration: const InputDecoration(
-            hintText: '搜索电影、剧集…',
+          decoration: InputDecoration(
+            hintText: L.of(context).searchHint,
             border: InputBorder.none,
           ),
           textInputAction: TextInputAction.search,
@@ -94,18 +95,20 @@ class _SearchPageState extends State<SearchPage> {
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator.adaptive())
           : _results.isEmpty
               ? Center(
-                  child: Text(_searched ? '没有找到相关内容' : '输入关键词搜索'))
+                  child: Text(_searched
+                      ? L.of(context).noSearchResults
+                      : L.of(context).searchPrompt))
               : GridView.builder(
                   padding: const EdgeInsets.all(16),
-                  gridDelegate:
-                      const SliverGridDelegateWithMaxCrossAxisExtent(
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
                     maxCrossAxisExtent: 160,
                     mainAxisSpacing: 16,
                     crossAxisSpacing: 12,
-                    childAspectRatio: 0.58,
+                    // library_page.dart 同款坑：0.58 太紧，字体度量稍变就溢出。
+                    childAspectRatio: 0.5,
                   ),
                   itemCount: _results.length,
                   itemBuilder: (context, i) {
@@ -121,9 +124,8 @@ class _SearchPageState extends State<SearchPage> {
                             ? null
                             : item.primaryImageTag,
                       ),
-                      onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                              builder: (_) => DetailPage(itemId: item.id))),
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => DetailPage(itemId: item.id))),
                     );
                   },
                 ),

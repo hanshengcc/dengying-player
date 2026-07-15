@@ -39,8 +39,9 @@ class PairingServer {
   PairingServer({required this.onSubmit});
 
   HttpServer? _server;
-  late final String _nonce = List.generate(
-      24, (_) => Random.secure().nextInt(16).toRadixString(16)).join();
+  late final String _nonce =
+      List.generate(24, (_) => Random.secure().nextInt(16).toRadixString(16))
+          .join();
   bool _done = false;
 
   /// 启动服务，返回手机要访问的 URL；无可用局域网地址时抛异常。
@@ -116,8 +117,8 @@ class PairingServer {
     );
     final uri = Uri.tryParse(creds.baseUrl);
     if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
-      res.write(_page('地址不对', '服务器地址要含 http:// 或 https://，返回上页改一下。',
-          back: true));
+      res.write(
+          _page('地址不对', '服务器地址要含 http:// 或 https://，返回上页改一下。', back: true));
       return;
     }
     if (creds.username.isEmpty) {

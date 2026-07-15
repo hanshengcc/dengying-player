@@ -13,14 +13,24 @@ import 'package:http/http.dart' as http;
 
 import 'models.dart';
 
-class EmbyApiException implements Exception {
-  final int? statusCode;
-  final String message;
-  EmbyApiException(this.message, {this.statusCode});
+/// 具体文案在 `friendlyError()` 里按 kind 翻译成当前界面语言——异常
+/// 本身不带死文案，不然切语言时旧异常还是原来那个语种。
+enum ApiErrorKind {
+  requestFailed,
+  wrongCredentials,
+  loginFailed,
+  loginMissingCredentials,
+  fetchLatestFailed,
+  fetchPlaybackInfoFailed,
+  unfavoriteFailed,
+  markUnwatchedFailed,
+}
 
-  @override
-  String toString() =>
-      statusCode == null ? message : '$message (HTTP $statusCode)';
+class EmbyApiException implements Exception {
+  final ApiErrorKind kind;
+  final int? statusCode;
+  final String? detail;
+  EmbyApiException(this.kind, {this.statusCode, this.detail});
 }
 
 class EmbyApi {
@@ -33,6 +43,11 @@ class EmbyApi {
   final http.Client _http;
   final String deviceId;
 
+  /// 界面语言，比如 "zh-CN"/"en-US"；服务端如果配了对应语言的元数据
+  /// （标题、简介），会跟着返回翻译版本，没有就照旧回退到原名。
+  /// 由 AppState 在语言切换时更新，null 表示不发这个头。
+  String? acceptLanguage;
+
   EmbyApi(this.server, {http.Client? client, String? deviceId})
       : _http = client ?? http.Client(),
         deviceId = deviceId ?? _stableDeviceId();
@@ -40,8 +55,8 @@ class EmbyApi {
   static String? _cachedDeviceId;
   static String _stableDeviceId() {
     // 进程内稳定即可；持久化 id 由 AppState 注入
-    return _cachedDeviceId ??= List.generate(
-        16, (_) => Random().nextInt(16).toRadixString(16)).join();
+    return _cachedDeviceId ??=
+        List.generate(16, (_) => Random().nextInt(16).toRadixString(16)).join();
   }
 
   String get _deviceName {
@@ -63,6 +78,7 @@ class EmbyApi {
       'Content-Type': 'application/json',
       'X-Emby-Authorization': auth,
       'Authorization': auth,
+      if (acceptLanguage != null) 'Accept-Language': acceptLanguage!,
       if (server.accessToken != null) 'X-Emby-Token': server.accessToken!,
     };
   }
@@ -80,7 +96,8 @@ class EmbyApi {
         .get(_uri(path, query), headers: _headers)
         .timeout(const Duration(seconds: 30));
     if (res.statusCode != 200) {
-      throw EmbyApiException('请求失败: $path', statusCode: res.statusCode);
+      throw EmbyApiException(ApiErrorKind.requestFailed,
+          statusCode: res.statusCode, detail: path);
     }
     return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
   }
@@ -90,7 +107,8 @@ class EmbyApi {
         .post(_uri(path), headers: _headers, body: jsonEncode(body))
         .timeout(const Duration(seconds: 30));
     if (res.statusCode >= 300) {
-      throw EmbyApiException('请求失败: $path', statusCode: res.statusCode);
+      throw EmbyApiException(ApiErrorKind.requestFailed,
+          statusCode: res.statusCode, detail: path);
     }
   }
 
@@ -106,17 +124,17 @@ class EmbyApi {
         )
         .timeout(const Duration(seconds: 30));
     if (res.statusCode == 401 || res.statusCode == 403) {
-      throw EmbyApiException('用户名或密码错误', statusCode: res.statusCode);
+      throw EmbyApiException(ApiErrorKind.wrongCredentials,
+          statusCode: res.statusCode);
     }
     if (res.statusCode != 200) {
-      throw EmbyApiException('登录失败', statusCode: res.statusCode);
+      throw EmbyApiException(ApiErrorKind.loginFailed, statusCode: res.statusCode);
     }
     final json = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
     server.accessToken = json['AccessToken'] as String?;
-    server.userId =
-        (json['User'] as Map<String, dynamic>?)?['Id'] as String?;
+    server.userId = (json['User'] as Map<String, dynamic>?)?['Id'] as String?;
     if (!server.isLoggedIn) {
-      throw EmbyApiException('登录响应缺少凭据');
+      throw EmbyApiException(ApiErrorKind.loginMissingCredentials);
     }
   }
 
@@ -144,7 +162,8 @@ class EmbyApi {
   }
 
   /// 最新入库。
-  Future<List<MediaItem>> getLatestItems({String? parentId, int limit = 16}) async {
+  Future<List<MediaItem>> getLatestItems(
+      {String? parentId, int limit = 16}) async {
     final uri = _uri('/Users/${server.userId}/Items/Latest', {
       'Limit': '$limit',
       if (parentId != null) 'ParentId': parentId,
@@ -154,7 +173,8 @@ class EmbyApi {
         .get(uri, headers: _headers)
         .timeout(const Duration(seconds: 30));
     if (res.statusCode != 200) {
-      throw EmbyApiException('获取最新入库失败', statusCode: res.statusCode);
+      throw EmbyApiException(ApiErrorKind.fetchLatestFailed,
+          statusCode: res.statusCode);
     }
     // 注意：Latest 端点直接返回数组而非 { Items: [...] }
     final list = jsonDecode(utf8.decode(res.bodyBytes)) as List<dynamic>;
@@ -214,6 +234,20 @@ class EmbyApi {
     return ItemsResult.fromJson(json).items;
   }
 
+  /// 这部剧接下来该看哪一集——服务端算好的，断点续播、跨季都准，
+  /// 剧集详情页的播放按钮直接用它，不用自己猜第一集还是续播哪集。
+  /// 取不到就返回 null，调用方兜底显示季选择器不显示播放按钮。
+  Future<MediaItem?> getNextUpEpisode(String seriesId) async {
+    final json = await _getJson('/Shows/NextUp', {
+      'UserId': server.userId!,
+      'SeriesId': seriesId,
+      'Limit': '1',
+      'Fields': _defaultFields,
+    });
+    final items = ItemsResult.fromJson(json).items;
+    return items.isEmpty ? null : items.first;
+  }
+
   // ---------------- 播放 ----------------
 
   Future<PlaybackInfo> getPlaybackInfo(String itemId) async {
@@ -236,7 +270,8 @@ class EmbyApi {
         )
         .timeout(const Duration(seconds: 30));
     if (res.statusCode != 200) {
-      throw EmbyApiException('获取播放信息失败', statusCode: res.statusCode);
+      throw EmbyApiException(ApiErrorKind.fetchPlaybackInfoFailed,
+          statusCode: res.statusCode);
     }
     return PlaybackInfo.fromJson(
         jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>);
@@ -338,7 +373,8 @@ class EmbyApi {
     } else {
       final res = await _http.delete(_uri(path), headers: _headers);
       if (res.statusCode >= 300) {
-        throw EmbyApiException('取消收藏失败', statusCode: res.statusCode);
+        throw EmbyApiException(ApiErrorKind.unfavoriteFailed,
+            statusCode: res.statusCode);
       }
     }
   }
@@ -350,7 +386,8 @@ class EmbyApi {
     } else {
       final res = await _http.delete(_uri(path), headers: _headers);
       if (res.statusCode >= 300) {
-        throw EmbyApiException('标记未看失败', statusCode: res.statusCode);
+        throw EmbyApiException(ApiErrorKind.markUnwatchedFailed,
+            statusCode: res.statusCode);
       }
     }
   }

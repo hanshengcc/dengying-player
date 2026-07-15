@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import '../l10n/app_localizations.dart';
 import '../state/app_state.dart';
 import '../utils/errors.dart';
 import '../utils/pairing_server.dart';
@@ -33,7 +34,7 @@ class _PairingDialogState extends State<PairingDialog> {
       final url = await server.start();
       if (mounted) setState(() => _url = url);
     } catch (e) {
-      if (mounted) setState(() => _error = friendlyError(e));
+      if (mounted) setState(() => _error = friendlyError(context, e));
     }
   }
 
@@ -48,7 +49,7 @@ class _PairingDialogState extends State<PairingDialog> {
         password: creds.password,
       );
     } catch (e) {
-      return friendlyError(e);
+      return friendlyError(context, e);
     }
     if (mounted) {
       setState(() => _success = true);
@@ -70,7 +71,7 @@ class _PairingDialogState extends State<PairingDialog> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return AlertDialog(
-      title: const Text('手机扫码配对'),
+      title: Text(L.of(context).pairViaPhone),
       content: SizedBox(
         width: 320,
         child: Column(
@@ -79,13 +80,13 @@ class _PairingDialogState extends State<PairingDialog> {
             if (_success) ...[
               Icon(Icons.check_circle, size: 64, color: scheme.primary),
               const SizedBox(height: 12),
-              const Text('配对成功，正在进入…'),
+              Text(L.of(context).pairingSuccess),
             ] else if (_error != null) ...[
               Icon(Icons.error_outline, size: 48, color: scheme.error),
               const SizedBox(height: 12),
               Text(_error!, textAlign: TextAlign.center),
             ] else if (_url == null) ...[
-              const CircularProgressIndicator(),
+              const CircularProgressIndicator.adaptive(),
             ] else ...[
               Container(
                 padding: const EdgeInsets.all(12),
@@ -99,8 +100,7 @@ class _PairingDialogState extends State<PairingDialog> {
                 ),
               ),
               const SizedBox(height: 16),
-              const Text('手机连同一 Wi-Fi，扫码填写服务器信息',
-                  textAlign: TextAlign.center),
+              Text(L.of(context).pairInstructions, textAlign: TextAlign.center),
               const SizedBox(height: 8),
               SelectableText(
                 _url.toString(),
@@ -117,11 +117,12 @@ class _PairingDialogState extends State<PairingDialog> {
                   SizedBox(
                     width: 14,
                     height: 14,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: scheme.primary),
+                    child: CircularProgressIndicator.adaptive(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation(scheme.primary)),
                   ),
                   const SizedBox(width: 10),
-                  Text('等待手机提交…',
+                  Text(L.of(context).waitingForPhone,
                       style: TextStyle(color: scheme.onSurfaceVariant)),
                 ],
               ),
@@ -133,7 +134,7 @@ class _PairingDialogState extends State<PairingDialog> {
         TextButton(
           autofocus: context.watch<AppState>().tvMode,
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
+          child: Text(L.of(context).cancel),
         ),
       ],
     );

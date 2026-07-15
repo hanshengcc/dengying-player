@@ -30,6 +30,15 @@ const _seed = Color(0xFF4A7C9B);
 /// 都是同一个笃定的颜色。
 const kAccentFill = _seed;
 
+/// 全局滚动手感——不管哪个平台，滑动列表都带 iOS 那种橡皮筋回弹，
+/// 不用 Android 默认的死板到头就停。D-pad 焦点滚动走的是程序化动画
+/// （Scrollable.ensureVisible），不受这个影响，电视上没有副作用。
+class AppScrollBehavior extends MaterialScrollBehavior {
+  @override
+  ScrollPhysics getScrollPhysics(BuildContext context) =>
+      const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics());
+}
+
 /// 主 CTA 按钮样式——每个页面"这个最重要"的那一个动作用它：详情页的
 /// 播放、登录门页的添加服务器、表单提交。品牌色实心 + 白字 + 阴影，
 /// 跟其他 FilledButton（重试之类的次要动作）拉开层级。
@@ -74,7 +83,9 @@ ThemeData buildAppTheme(Brightness brightness) {
           fontWeight: FontWeight.w600,
           letterSpacing: 0.1,
         ),
-        bodyMedium: base.bodyMedium?.copyWith(height: 1.45),
+        // 不在这儿统一给 bodyMedium 加行高——海报卡片标题这种单行文字也
+        // 吃这个样式，行高一撑就把 GridView 固定高度的卡片撑溢出了。
+        // 长段落（详情页简介）需要的行高在各自的 Text 上单独 copyWith。
       )
       .apply(
         bodyColor: scheme.onSurface,

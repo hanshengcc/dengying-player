@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../api/emby_api.dart';
 import '../api/models.dart';
+import '../l10n/app_localizations.dart';
 import '../state/app_state.dart';
 import '../utils/errors.dart';
 import '../utils/update_checker.dart';
@@ -51,9 +52,9 @@ class _HomePageState extends State<HomePage> {
     final info = await UpdateChecker.checkThrottled();
     if (!mounted || info == null) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('发现新版本 v${info.version}'),
+      content: Text(L.of(context).newVersionFound(info.version)),
       action: SnackBarAction(
-        label: '查看',
+        label: L.of(context).view,
         onPressed: () => showUpdateDialog(context, info),
       ),
       duration: const Duration(seconds: 8),
@@ -79,7 +80,7 @@ class _HomePageState extends State<HomePage> {
           .toList();
       _latestCache.clear();
     } catch (e) {
-      _error = friendlyError(e);
+      if (mounted) _error = friendlyError(context, e);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -106,30 +107,30 @@ class _HomePageState extends State<HomePage> {
     final state = context.watch<AppState>();
     return Scaffold(
       appBar: AppBar(
-        title: Text(state.activeServer?.name ?? '灯影'),
+        title: Text(state.activeServer?.name ?? L.of(context).appName),
         actions: [
           IconButton(
             icon: const Icon(Icons.search),
-            tooltip: '搜索',
+            tooltip: L.of(context).search,
             onPressed: () => Navigator.of(context)
                 .push(MaterialPageRoute(builder: (_) => const SearchPage())),
           ),
           IconButton(
             icon: const Icon(Icons.dns_outlined),
-            tooltip: '服务器',
+            tooltip: L.of(context).servers,
             onPressed: () => Navigator.of(context)
                 .push(MaterialPageRoute(builder: (_) => const ServersPage())),
           ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
-            tooltip: '设置',
+            tooltip: L.of(context).settings,
             onPressed: () => Navigator.of(context)
                 .push(MaterialPageRoute(builder: (_) => const SettingsPage())),
           ),
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator.adaptive())
           : _error != null
               ? _ErrorRetry(error: _error!, onRetry: _load)
               : RefreshIndicator(
@@ -148,7 +149,7 @@ class _HomePageState extends State<HomePage> {
                         return _resume.isEmpty
                             ? const SizedBox.shrink()
                             : SectionRow(
-                                title: '继续观看',
+                                title: L.of(context).continueWatching,
                                 height: 224,
                                 children: _resume.indexed
                                     .map((r) => PosterCard(
@@ -264,7 +265,7 @@ class _LatestSectionState extends State<_LatestSection> {
     if (items == null) return _Skeleton(title: widget.view.name);
     if (items.isEmpty) return const SizedBox.shrink();
     return SectionRow(
-      title: '最新 · ${widget.view.name}',
+      title: L.of(context).latestInView(widget.view.name),
       onMore: widget.onMore,
       children: items
           .map((e) => PosterCard(
@@ -290,7 +291,7 @@ class _Skeleton extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(24, 24, 16, 12),
-          child: Text('最新 · $title',
+          child: Text(L.of(context).latestInView(title),
               style: Theme.of(context)
                   .textTheme
                   .titleMedium
@@ -352,7 +353,7 @@ class _ErrorRetry extends StatelessWidget {
             child: Text(error, textAlign: TextAlign.center),
           ),
           const SizedBox(height: 16),
-          FilledButton.tonal(onPressed: onRetry, child: const Text('重试')),
+          FilledButton.tonal(onPressed: onRetry, child: Text(L.of(context).retry)),
         ],
       ),
     );

@@ -45,12 +45,12 @@ class UpdateChecker {
       if (resp.statusCode != 200) return null;
 
       final json = jsonDecode(resp.body) as Map<String, dynamic>;
-      final tag = (json['tag_name'] as String? ?? '').replaceFirst(
-          RegExp(r'^v'), '');
+      final tag =
+          (json['tag_name'] as String? ?? '').replaceFirst(RegExp(r'^v'), '');
       if (tag.isEmpty || !_isNewer(tag, info.version)) return null;
 
-      final assets = (json['assets'] as List? ?? [])
-          .cast<Map<String, dynamic>>();
+      final assets =
+          (json['assets'] as List? ?? []).cast<Map<String, dynamic>>();
       final keyword = _platformKeyword();
       final asset = assets.cast<Map<String, dynamic>?>().firstWhere(
             (a) => (a?['name'] as String? ?? '').contains(keyword),

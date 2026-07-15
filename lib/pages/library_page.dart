@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../api/emby_api.dart';
 import '../api/models.dart';
+import '../l10n/app_localizations.dart';
 import '../state/app_state.dart';
 import '../utils/errors.dart';
 import '../widgets/poster_card.dart';
@@ -74,7 +75,7 @@ class _LibraryPageState extends State<LibraryPage> {
       _items.addAll(result.items);
       _total = result.totalCount;
     } catch (e) {
-      _error = friendlyError(e);
+      if (mounted) _error = friendlyError(context, e);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -98,7 +99,7 @@ class _LibraryPageState extends State<LibraryPage> {
         actions: [
           PopupMenuButton<String>(
             icon: const Icon(Icons.sort),
-            tooltip: '排序',
+            tooltip: L.of(context).sort,
             onSelected: (v) {
               switch (v) {
                 case 'name':
@@ -111,21 +112,23 @@ class _LibraryPageState extends State<LibraryPage> {
                   _resort('CommunityRating', 'Descending');
               }
             },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'name', child: Text('按名称')),
-              PopupMenuItem(value: 'date', child: Text('按入库时间')),
-              PopupMenuItem(value: 'year', child: Text('按年份')),
-              PopupMenuItem(value: 'rating', child: Text('按评分')),
+            itemBuilder: (ctx) => [
+              PopupMenuItem(value: 'name', child: Text(L.of(ctx).sortByName)),
+              PopupMenuItem(
+                  value: 'date', child: Text(L.of(ctx).sortByDateAdded)),
+              PopupMenuItem(value: 'year', child: Text(L.of(ctx).sortByYear)),
+              PopupMenuItem(
+                  value: 'rating', child: Text(L.of(ctx).sortByRating)),
             ],
           ),
         ],
       ),
       body: _items.isEmpty && _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator.adaptive())
           : _items.isEmpty && _error != null
               ? Center(child: Text(_error!))
               : _items.isEmpty
-                  ? const Center(child: Text('这个库是空的'))
+                  ? Center(child: Text(L.of(context).libraryEmpty))
                   : GridView.builder(
                       controller: _scroll,
                       // 电视 overscan 安全边距
@@ -136,7 +139,10 @@ class _LibraryPageState extends State<LibraryPage> {
                         maxCrossAxisExtent: 160,
                         mainAxisSpacing: 16,
                         crossAxisSpacing: 12,
-                        childAspectRatio: 0.58,
+                        // 0.58 卡得太紧——封面图 + 标题 + 副标题两行文字
+                        // 只要字体度量差几像素就溢出（真出过事：换字体
+                        // 后海报卡片整片 RenderFlex overflow）。留够余量。
+                        childAspectRatio: 0.5,
                       ),
                       itemCount: _items.length + (_hasMore ? 1 : 0),
                       itemBuilder: (context, i) {
@@ -144,7 +150,7 @@ class _LibraryPageState extends State<LibraryPage> {
                           return const Center(
                               child: Padding(
                             padding: EdgeInsets.all(16),
-                            child: CircularProgressIndicator(),
+                            child: CircularProgressIndicator.adaptive(),
                           ));
                         }
                         final item = _items[i];

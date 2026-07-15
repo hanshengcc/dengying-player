@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/app_localizations.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import '../utils/update_checker.dart';
@@ -16,13 +17,14 @@ class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final l = L.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('设置')),
+      appBar: AppBar(title: Text(l.settings)),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: [
           _SettingsSection(
-            title: '外观',
+            title: l.appearance,
             child: RadioGroup<ThemeMode>(
               groupValue: state.themeMode,
               onChanged: (m) => state.setThemeMode(m!),
@@ -31,16 +33,16 @@ class SettingsPage extends StatelessWidget {
                   TvFocusHighlight(
                     child: RadioListTile<ThemeMode>(
                         autofocus: state.tvMode,
-                        title: const Text('跟随系统'),
+                        title: Text(l.followSystem),
                         value: ThemeMode.system),
                   ),
-                  const TvFocusHighlight(
+                  TvFocusHighlight(
                     child: RadioListTile<ThemeMode>(
-                        title: Text('浅色'), value: ThemeMode.light),
+                        title: Text(l.lightTheme), value: ThemeMode.light),
                   ),
-                  const TvFocusHighlight(
+                  TvFocusHighlight(
                     child: RadioListTile<ThemeMode>(
-                        title: Text('深色'), value: ThemeMode.dark),
+                        title: Text(l.darkTheme), value: ThemeMode.dark),
                   ),
                 ],
               ),
@@ -48,11 +50,37 @@ class SettingsPage extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           _SettingsSection(
-            title: '电视',
+            title: l.languageSectionTitle,
+            child: RadioGroup<Locale?>(
+              groupValue: state.locale,
+              onChanged: (v) => state.setLocale(v),
+              child: Column(
+                children: [
+                  TvFocusHighlight(
+                    child: RadioListTile<Locale?>(
+                        title: Text(l.followSystem), value: null),
+                  ),
+                  TvFocusHighlight(
+                    child: RadioListTile<Locale?>(
+                        title: Text(l.languageChinese),
+                        value: const Locale('zh')),
+                  ),
+                  TvFocusHighlight(
+                    child: RadioListTile<Locale?>(
+                        title: Text(l.languageEnglish),
+                        value: const Locale('en')),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          _SettingsSection(
+            title: l.tvSectionTitle,
             child: TvFocusHighlight(
               child: SwitchListTile(
-                title: const Text('电视模式'),
-                subtitle: const Text('放大排版、遥控器按键适配（Android TV 自动开启）'),
+                title: Text(l.tvModeTitle),
+                subtitle: Text(l.tvModeDescription),
                 value: state.tvMode,
                 onChanged: (v) => state.setTvMode(v),
               ),
@@ -60,7 +88,7 @@ class SettingsPage extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           _SettingsSection(
-            title: '账户',
+            title: l.account,
             child: Column(
               children: [
                 if (state.activeServer != null)
@@ -72,7 +100,7 @@ class SettingsPage extends StatelessWidget {
                 TvFocusHighlight(
                   child: ListTile(
                     leading: const Icon(Icons.logout),
-                    title: const Text('退出登录'),
+                    title: Text(l.logout),
                     onTap: () async {
                       await context.read<AppState>().logout();
                       if (context.mounted) {
@@ -86,25 +114,26 @@ class SettingsPage extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           _SettingsSection(
-            title: '关于',
+            title: l.about,
             child: FutureBuilder<PackageInfo>(
               future: PackageInfo.fromPlatform(),
               builder: (context, snap) {
                 final version = snap.data?.version;
+                final l = L.of(context);
                 return Column(
                   children: [
-                    const ListTile(
-                      leading: Icon(Icons.info_outline),
-                      title: Text('灯影'),
-                      subtitle: Text(
-                          'Flutter + MPV (media_kit) · 支持 Emby / Jellyfin'),
+                    ListTile(
+                      leading: const Icon(Icons.info_outline),
+                      title: Text(l.appName),
+                      subtitle: Text(l.aboutSubtitle),
                     ),
                     TvFocusHighlight(
                       child: ListTile(
                         leading: const Icon(Icons.system_update_outlined),
-                        title: const Text('检查更新'),
-                        subtitle: Text(
-                            version != null ? '当前版本 v$version' : '读取版本中…'),
+                        title: Text(l.checkUpdate),
+                        subtitle: Text(version != null
+                            ? l.currentVersion(version)
+                            : l.loadingVersion),
                         onTap: () => _checkUpdate(context),
                       ),
                     ),
@@ -119,13 +148,14 @@ class SettingsPage extends StatelessWidget {
   }
 
   Future<void> _checkUpdate(BuildContext context) async {
+    final l = L.of(context);
     final messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(const SnackBar(content: Text('正在检查更新…')));
+    messenger.showSnackBar(SnackBar(content: Text(l.checkingUpdate)));
     final info = await UpdateChecker.check();
     if (!context.mounted) return;
     messenger.hideCurrentSnackBar();
     if (info == null) {
-      messenger.showSnackBar(const SnackBar(content: Text('已是最新版本')));
+      messenger.showSnackBar(SnackBar(content: Text(l.alreadyLatest)));
     } else {
       showUpdateDialog(context, info);
     }

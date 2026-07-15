@@ -122,12 +122,14 @@ class MediaItem {
 
   bool get isVideo => type == 'Movie' || type == 'Episode' || type == 'Video';
   bool get isFolder =>
-      type == 'Series' || type == 'Season' || type == 'BoxSet' ||
-      type == 'Folder' || type == 'CollectionFolder';
+      type == 'Series' ||
+      type == 'Season' ||
+      type == 'BoxSet' ||
+      type == 'Folder' ||
+      type == 'CollectionFolder';
 
-  Duration? get runTime => runTimeTicks == null
-      ? null
-      : Duration(microseconds: runTimeTicks! ~/ 10);
+  Duration? get runTime =>
+      runTimeTicks == null ? null : Duration(microseconds: runTimeTicks! ~/ 10);
 
   Duration get resumePosition =>
       Duration(microseconds: (playbackPositionTicks ?? 0) ~/ 10);

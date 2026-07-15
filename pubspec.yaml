@@ -9,6 +9,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2
 
   # 播放内核：libmpv 封装，全平台
   media_kit: ^1.1.11
@@ -32,6 +35,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  generate: true
   # 字体直接打包，不用 google_fonts 运行时联网拉取——国内网络访问
   # Google 字体 CDN 常被墙，联网取字体在目标用户的环境里不可靠。
   fonts:

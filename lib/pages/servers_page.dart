@@ -1,8 +1,10 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../api/models.dart';
+import '../l10n/app_localizations.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import '../utils/errors.dart';
@@ -19,7 +21,9 @@ class ServersPage extends StatelessWidget {
     return Scaffold(
       // 首次启动的空态是登录入口，不是管理页——去掉 AppBar 铬边，
       // 让下面的暗场氛围铺满全屏，跟 Netflix 的登录门页一个调子。
-      appBar: state.servers.isEmpty ? null : AppBar(title: const Text('服务器')),
+      appBar: state.servers.isEmpty
+          ? null
+          : AppBar(title: Text(L.of(context).servers)),
       body: state.servers.isEmpty
           ? _EmptyHint(onAdd: () => _showAddSheet(context))
           : ListView.builder(
@@ -50,7 +54,7 @@ class ServersPage extends StatelessWidget {
                           ),
                         IconButton(
                           icon: const Icon(Icons.delete_outline),
-                          tooltip: '删除',
+                          tooltip: L.of(context).delete,
                           onPressed: () => _confirmDelete(context, s),
                         ),
                       ],
@@ -80,7 +84,7 @@ class ServersPage extends StatelessWidget {
                 onPressed: () => showDialog(
                     context: context, builder: (_) => const PairingDialog()),
                 icon: const Icon(Icons.qr_code_2),
-                label: const Text('手机扫码配对'),
+                label: Text(L.of(context).pairViaPhone),
               ),
             ),
           const SizedBox(height: 12),
@@ -90,7 +94,7 @@ class ServersPage extends StatelessWidget {
               heroTag: 'add',
               onPressed: () => _showAddSheet(context),
               icon: const Icon(Icons.add),
-              label: const Text('添加服务器'),
+              label: Text(L.of(context).addServer),
             ),
           ),
         ],
@@ -102,19 +106,19 @@ class ServersPage extends StatelessWidget {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('删除服务器'),
-        content: Text('确定删除「${s.name}」？'),
+        title: Text(L.of(context).deleteServerTitle),
+        content: Text(L.of(context).deleteServerConfirm(s.name)),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消')),
+              child: Text(L.of(context).cancel)),
           FilledButton(
               style: FilledButton.styleFrom(
                 backgroundColor: Theme.of(context).colorScheme.error,
                 foregroundColor: Theme.of(context).colorScheme.onError,
               ),
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('删除')),
+              child: Text(L.of(context).delete)),
         ],
       ),
     );
@@ -127,9 +131,12 @@ class ServersPage extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (_) => Padding(
-        padding:
-            EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      // 用弹层自己的 context，不是外层传进来的——外层页面登录成功后
+      // 会被 popUntil 弹掉、context 失效，这时候如果还拿它查 MediaQuery
+      // 会直接崩（"Looking up a deactivated widget's ancestor"）。
+      builder: (sheetContext) => Padding(
+        padding: EdgeInsets.only(
+            bottom: MediaQuery.of(sheetContext).viewInsets.bottom),
         child: _AddServerForm(relogin: relogin),
       ),
     );
@@ -162,14 +169,14 @@ class _EmptyHint extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('灯影',
+              Text(L.of(context).appName,
                   style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 4,
                       )),
               const SizedBox(height: 16),
-              Text('添加一个 Emby 或 Jellyfin 服务器开始使用',
+              Text(L.of(context).addServerHint,
                   style: Theme.of(context)
                       .textTheme
                       .bodyMedium
@@ -180,9 +187,12 @@ class _EmptyHint extends StatelessWidget {
                 child: FilledButton.icon(
                   style: primaryCtaStyle(),
                   autofocus: tvMode,
-                  onPressed: onAdd,
+                  onPressed: () {
+                    HapticFeedback.lightImpact();
+                    onAdd();
+                  },
                   icon: const Icon(Icons.add),
-                  label: const Text('添加服务器'),
+                  label: Text(L.of(context).addServer),
                 ),
               ),
             ],
@@ -251,7 +261,7 @@ class _AddServerFormState extends State<_AddServerForm> {
       }
       if (mounted) Navigator.of(context).popUntil((r) => r.isFirst);
     } catch (e) {
-      setState(() => _error = friendlyError(e));
+      setState(() => _error = friendlyError(context, e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -270,7 +280,7 @@ class _AddServerFormState extends State<_AddServerForm> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(isRelogin ? '重新登录' : '添加服务器',
+              Text(isRelogin ? L.of(context).reloginTitle : L.of(context).addServer,
                   style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 16),
               SegmentedButton<ServerType>(
@@ -288,16 +298,16 @@ class _AddServerFormState extends State<_AddServerForm> {
                 controller: _url,
                 enabled: !isRelogin,
                 autofocus: tvMode && !isRelogin,
-                decoration: const InputDecoration(
-                  labelText: '服务器地址',
+                decoration: InputDecoration(
+                  labelText: L.of(context).serverAddress,
                   hintText: 'https://emby.example.com:8096',
-                  prefixIcon: Icon(Icons.link),
+                  prefixIcon: const Icon(Icons.link),
                 ),
                 keyboardType: TextInputType.url,
                 validator: (v) {
                   final u = Uri.tryParse(v?.trim() ?? '');
                   if (u == null || !u.hasScheme || u.host.isEmpty) {
-                    return '请输入完整地址（含 http:// 或 https://）';
+                    return L.of(context).invalidUrlError;
                   }
                   return null;
                 },
@@ -306,30 +316,31 @@ class _AddServerFormState extends State<_AddServerForm> {
               TextFormField(
                 controller: _name,
                 enabled: !isRelogin,
-                decoration: const InputDecoration(
-                  labelText: '名称（可选）',
-                  prefixIcon: Icon(Icons.badge_outlined),
+                decoration: InputDecoration(
+                  labelText: L.of(context).nameOptional,
+                  prefixIcon: const Icon(Icons.badge_outlined),
                 ),
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _user,
                 enabled: !isRelogin,
-                decoration: const InputDecoration(
-                  labelText: '用户名',
-                  prefixIcon: Icon(Icons.person_outline),
+                decoration: InputDecoration(
+                  labelText: L.of(context).username,
+                  prefixIcon: const Icon(Icons.person_outline),
                 ),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? '请输入用户名' : null,
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? L.of(context).usernameRequired
+                    : null,
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _password,
                 obscureText: true,
                 autofocus: tvMode && isRelogin,
-                decoration: const InputDecoration(
-                  labelText: '密码',
-                  prefixIcon: Icon(Icons.lock_outline),
+                decoration: InputDecoration(
+                  labelText: L.of(context).password,
+                  prefixIcon: const Icon(Icons.lock_outline),
                 ),
                 onFieldSubmitted: (_) => _submit(),
               ),
@@ -342,14 +353,20 @@ class _AddServerFormState extends State<_AddServerForm> {
               const SizedBox(height: 20),
               FilledButton(
                 style: primaryCtaStyle(),
-                onPressed: _busy ? null : _submit,
+                onPressed: _busy
+                    ? null
+                    : () {
+                        HapticFeedback.lightImpact();
+                        _submit();
+                      },
                 child: _busy
                     ? const SizedBox(
                         width: 20,
                         height: 20,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white))
-                    : Text(isRelogin ? '登录' : '连接并登录'),
+                        child: CircularProgressIndicator.adaptive(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation(Colors.white)))
+                    : Text(isRelogin ? L.of(context).login : L.of(context).connectAndLogin),
               ),
             ],
           ),

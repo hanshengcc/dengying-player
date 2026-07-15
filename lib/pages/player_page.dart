@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 
 import '../api/emby_api.dart';
 import '../api/models.dart';
+import '../l10n/app_localizations.dart';
 import '../state/app_state.dart';
 import '../utils/errors.dart';
 import '../theme.dart';
@@ -97,7 +98,8 @@ class _PlayerPageState extends State<PlayerPage> {
     try {
       final info = await _api.getPlaybackInfo(item.id);
       if (info.mediaSources.isEmpty) {
-        throw Exception('没有可用的播放源');
+        // 内部标记异常，从不直接展示——friendlyError 兜底成通用错误文案。
+        throw Exception('no playback source');
       }
       _current = item;
       _playbackInfo = info;
@@ -111,7 +113,7 @@ class _PlayerPageState extends State<PlayerPage> {
       _started = true;
       if (mounted) setState(() {});
     } catch (e) {
-      if (mounted) setState(() => _error = friendlyError(e));
+      if (mounted) setState(() => _error = friendlyError(context, e));
     }
   }
 
@@ -154,9 +156,14 @@ class _PlayerPageState extends State<PlayerPage> {
       await _reportStopped(); // 当前集收尾（服务器会记录进度/已看）
       _started = false;
       if (!mounted) return;
-      final prefix = auto ? '自动播放' : (offset > 0 ? '下一集' : '上一集');
+      final num = next.indexNumber?.toString() ?? '?';
+      final content = auto
+          ? L.of(context).autoPlayNext(num, next.name)
+          : (offset > 0
+              ? L.of(context).manualPlayNext(num, next.name)
+              : L.of(context).manualPlayPrevious(num, next.name));
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('$prefix：第${next.indexNumber ?? '?'}集 ${next.name}'),
+        content: Text(content),
         duration: const Duration(seconds: 3),
       ));
       await _open(next);
@@ -283,7 +290,8 @@ class _PlayerPageState extends State<PlayerPage> {
       final track =
           SubtitleTrack.uri(url, title: s.displayTitle, language: s.language);
       subtitleOptions.add(_TvMenuOption(
-        '外挂 · ${s.displayTitle ?? s.language ?? s.index}',
+        L.of(context)
+            .externalSubtitle(s.displayTitle ?? s.language ?? '${s.index}'),
         current.subtitle.id == url,
         () => _player.setSubtitleTrack(track),
       ));
@@ -295,7 +303,9 @@ class _PlayerPageState extends State<PlayerPage> {
     ];
     final speedOptions = <_TvMenuOption>[
       for (final r in [0.5, 0.75, 1.0, 1.25, 1.5, 2.0])
-        _TvMenuOption(r == 1.0 ? '正常' : '${r}x', _player.state.rate == r,
+        _TvMenuOption(
+            r == 1.0 ? L.of(context).normalSpeed : '${r}x',
+            _player.state.rate == r,
             () => _player.setRate(r)),
     ];
 
@@ -303,9 +313,9 @@ class _PlayerPageState extends State<PlayerPage> {
     await showDialog(
       context: context,
       builder: (context) => _TvSettingsDialog(sections: [
-        ('字幕', subtitleOptions),
-        ('音轨', audioOptions),
-        ('倍速', speedOptions),
+        (L.of(context).subtitleLabel, subtitleOptions),
+        (L.of(context).audioTrackLabel, audioOptions),
+        (L.of(context).playbackSpeedLabel, speedOptions),
       ]),
     );
   }
@@ -373,15 +383,15 @@ class _PlayerPageState extends State<PlayerPage> {
   /// AudioTrack / SubtitleTrack 无公共父类，动态取 id/title/language。
   String _trackLabel(dynamic t) {
     final String id = t.id as String;
-    if (id == 'auto') return '自动';
-    if (id == 'no') return '关闭';
+    if (id == 'auto') return L.of(context).subtitleAuto;
+    if (id == 'no') return L.of(context).subtitleOff;
     final String? title = t.title as String?;
     final String? language = t.language as String?;
     final parts = [
       if (title != null && title.isNotEmpty) title,
       if (language != null && language.isNotEmpty) language,
     ];
-    return parts.isEmpty ? '轨道 $id' : parts.join(' · ');
+    return parts.isEmpty ? L.of(context).trackFallback(id) : parts.join(' · ');
   }
 
   PopupMenuItem<T> _menuItem<T>(T value, String label, bool selected) =>
@@ -402,7 +412,7 @@ class _PlayerPageState extends State<PlayerPage> {
 
   Widget _audioMenu() => PopupMenuButton<AudioTrack>(
         icon: const Icon(Icons.audiotrack, color: Colors.white, size: 22),
-        tooltip: '音轨',
+        tooltip: L.of(context).audioTrackLabel,
         onSelected: (t) => _player.setAudioTrack(t),
         itemBuilder: (_) {
           final current = _player.state.track.audio;
@@ -414,7 +424,7 @@ class _PlayerPageState extends State<PlayerPage> {
 
   Widget _subtitleMenu() => PopupMenuButton<SubtitleTrack>(
         icon: const Icon(Icons.subtitles, color: Colors.white, size: 22),
-        tooltip: '字幕',
+        tooltip: L.of(context).subtitleLabel,
         onSelected: (t) => _player.setSubtitleTrack(t),
         itemBuilder: (_) {
           final current = _player.state.track.subtitle;
@@ -432,7 +442,8 @@ class _PlayerPageState extends State<PlayerPage> {
             items.add(_menuItem(
               SubtitleTrack.uri(url,
                   title: s.displayTitle, language: s.language),
-              '外挂 · ${s.displayTitle ?? s.language ?? s.index}',
+              L.of(context)
+                  .externalSubtitle(s.displayTitle ?? s.language ?? '${s.index}'),
               current.id == url,
             ));
           }
@@ -442,11 +453,12 @@ class _PlayerPageState extends State<PlayerPage> {
 
   Widget _speedMenu() => PopupMenuButton<double>(
         icon: const Icon(Icons.speed, color: Colors.white, size: 22),
-        tooltip: '倍速',
+        tooltip: L.of(context).playbackSpeedLabel,
         onSelected: (r) => _player.setRate(r),
         itemBuilder: (_) => [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
-            .map((r) => _menuItem(
-                r, r == 1.0 ? '正常' : '${r}x', _player.state.rate == r))
+            .map((r) => _menuItem(r,
+                r == 1.0 ? L.of(context).normalSpeed : '${r}x',
+                _player.state.rate == r))
             .toList(),
       );
 }
@@ -729,35 +741,36 @@ class _TvControlsState extends State<_TvControls> {
       initialData: _player.state.playing,
       builder: (_, snap) {
         final playing = snap.data ?? true;
+        final l = L.of(context);
         _actions = [
           (
             icon: Icons.replay_10,
-            label: '快退',
+            label: l.seekBack,
             big: false,
             onTap: () => widget.onSeekBy(const Duration(seconds: -10)),
           ),
           (
             icon: playing ? Icons.pause : Icons.play_arrow,
-            label: playing ? '暂停' : '播放',
+            label: playing ? l.pause : l.play,
             big: true,
             onTap: () => _player.playOrPause(),
           ),
           (
             icon: Icons.forward_10,
-            label: '快进',
+            label: l.seekForward,
             big: false,
             onTap: () => widget.onSeekBy(const Duration(seconds: 10)),
           ),
           if (widget.isEpisode)
             (
               icon: Icons.skip_next,
-              label: '下一集',
+              label: l.nextEpisode,
               big: false,
               onTap: widget.onNextEpisode,
             ),
           (
             icon: Icons.subtitles,
-            label: '字幕和音频',
+            label: l.subtitlesAndAudio,
             big: false,
             onTap: _openSettings,
           ),
@@ -1001,7 +1014,9 @@ class _TvSettingsDialogState extends State<_TvSettingsDialog> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     if (_tabs.isEmpty) {
-      return const AlertDialog(title: Text('播放设置'), content: Text('没有可用选项'));
+      return AlertDialog(
+          title: Text(L.of(context).playbackSettings),
+          content: Text(L.of(context).noOptionsAvailable));
     }
 
     return Focus(
@@ -1009,7 +1024,7 @@ class _TvSettingsDialogState extends State<_TvSettingsDialog> {
       autofocus: true,
       onKeyEvent: _onKey,
       child: AlertDialog(
-        title: const Text('播放设置'),
+        title: Text(L.of(context).playbackSettings),
         contentPadding: const EdgeInsets.only(bottom: 8),
         content: SizedBox(
           width: 420,

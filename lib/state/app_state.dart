@@ -15,12 +15,16 @@ class AppState extends ChangeNotifier {
   static const _kThemeMode = 'themeMode';
   static const _kDeviceId = 'deviceId';
   static const _kTvMode = 'tvMode';
+  static const _kLocale = 'locale';
 
   final List<ServerConfig> servers = [];
   ServerConfig? _active;
   EmbyApi? _api;
   ThemeMode themeMode = ThemeMode.system;
   late String deviceId;
+
+  /// 界面语言；null = 跟随系统（在受支持的语言里挑一个最接近的）。
+  Locale? locale;
 
   /// 电视模式：放大排版、overscan 边距、遥控器按键映射。
   /// Android TV 自动检测开启；设置页可手动覆盖。
@@ -42,14 +46,17 @@ class AppState extends ChangeNotifier {
     final raw = _prefs!.getStringList(_kServers) ?? const [];
     servers
       ..clear()
-      ..addAll(raw.map((s) =>
-          ServerConfig.fromJson(jsonDecode(s) as Map<String, dynamic>)));
+      ..addAll(raw.map(
+          (s) => ServerConfig.fromJson(jsonDecode(s) as Map<String, dynamic>)));
 
     final mode = _prefs!.getString(_kThemeMode);
     themeMode = ThemeMode.values.firstWhere(
       (m) => m.name == mode,
       orElse: () => ThemeMode.system,
     );
+
+    final localeCode = _prefs!.getString(_kLocale);
+    locale = localeCode == null ? null : Locale(localeCode);
 
     // 电视模式：用户手动设过用用户的，否则自动检测
     tvMode = _prefs!.getBool(_kTvMode) ?? await detectTv();
@@ -65,7 +72,18 @@ class AppState extends ChangeNotifier {
   void _setActive(ServerConfig? server) {
     _api?.dispose();
     _active = server;
-    _api = server == null ? null : EmbyApi(server, deviceId: deviceId);
+    _api = server == null
+        ? null
+        : (EmbyApi(server, deviceId: deviceId)
+          ..acceptLanguage = _resolveAcceptLanguage());
+  }
+
+  /// 服务端语言协商用的 Accept-Language；"跟随系统"时用设备系统语言，
+  /// 不是靠 BuildContext（AppState 拿不到），直接读 PlatformDispatcher。
+  String _resolveAcceptLanguage() {
+    final effective =
+        locale ?? WidgetsBinding.instance.platformDispatcher.locale;
+    return effective.languageCode == 'zh' ? 'zh-CN' : 'en-US';
   }
 
   Future<void> _persist() async {
@@ -153,6 +171,19 @@ class AppState extends ChangeNotifier {
   Future<void> setTvMode(bool value) async {
     tvMode = value;
     await _prefs?.setBool(_kTvMode, value);
+    notifyListeners();
+  }
+
+  /// null = 跟随系统。已登录状态下切语言，正在用的 API 客户端也要
+  /// 跟着换 Accept-Language，不然要重新登录一次才生效。
+  Future<void> setLocale(Locale? value) async {
+    locale = value;
+    if (value == null) {
+      await _prefs?.remove(_kLocale);
+    } else {
+      await _prefs?.setString(_kLocale, value.languageCode);
+    }
+    _api?.acceptLanguage = _resolveAcceptLanguage();
     notifyListeners();
   }
 }

@@ -2,10 +2,12 @@ import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../api/emby_api.dart';
 import '../api/models.dart';
+import '../l10n/app_localizations.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import '../utils/errors.dart';
@@ -26,6 +28,7 @@ class _DetailPageState extends State<DetailPage> {
   MediaItem? _item;
   List<MediaItem> _seasons = [];
   List<MediaItem> _episodes = [];
+  MediaItem? _nextUp;
   String? _selectedSeasonId;
   bool _loading = true;
   String? _error;
@@ -51,9 +54,19 @@ class _DetailPageState extends State<DetailPage> {
         if (_seasons.isNotEmpty) {
           await _selectSeason(_seasons.first.id, refresh: false);
         }
+        // 剧集本身不能直接播——按"接下来该看哪集"给个播放按钮，
+        // 跟 Netflix 一样，不用先划到季/集列表里手动挑。
+        try {
+          _nextUp = await _api.getNextUpEpisode(item.id);
+        } catch (_) {}
+        // NextUp 只覆盖"看过至少一集、还没追完"的剧；全新没看过的剧
+        // 服务端不会给续看记录，这时候退回第一季第一集，不能没按钮。
+        if (_nextUp == null && _episodes.isNotEmpty) {
+          _nextUp = _episodes.first;
+        }
       }
     } catch (e) {
-      _error = friendlyError(e);
+      if (mounted) _error = friendlyError(context, e);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -84,8 +97,8 @@ class _DetailPageState extends State<DetailPage> {
       _load();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('操作失败: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(L.of(context).operationFailed(e.toString()))));
       }
     }
   }
@@ -95,7 +108,7 @@ class _DetailPageState extends State<DetailPage> {
     if (_loading) {
       return Scaffold(
           appBar: AppBar(),
-          body: const Center(child: CircularProgressIndicator()));
+          body: const Center(child: CircularProgressIndicator.adaptive()));
     }
     if (_error != null || _item == null) {
       return Scaffold(
@@ -104,9 +117,10 @@ class _DetailPageState extends State<DetailPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(_error ?? '加载失败'),
+              Text(_error ?? L.of(context).loadFailed),
               const SizedBox(height: 12),
-              FilledButton.tonal(onPressed: _load, child: const Text('重试')),
+              FilledButton.tonal(
+                  onPressed: _load, child: Text(L.of(context).retry)),
             ],
           ),
         ),
@@ -206,7 +220,7 @@ class _DetailPageState extends State<DetailPage> {
                                       color: Colors.white,
                                       shadows: heroTextShadows)),
                             if (item.runTime != null)
-                              Text(formatRuntime(item.runTime!),
+                              Text(formatRuntime(context, item.runTime!),
                                   style: const TextStyle(
                                       color: Colors.white,
                                       shadows: heroTextShadows)),
@@ -237,6 +251,10 @@ class _DetailPageState extends State<DetailPage> {
                         if (item.isVideo) ...[
                           const SizedBox(height: 16),
                           _buildPlayButtons(item),
+                        ] else if (item.type == 'Series' &&
+                            _nextUp != null) ...[
+                          const SizedBox(height: 16),
+                          _buildPlayButtons(_nextUp!),
                         ],
                       ],
                     ),
@@ -271,6 +289,12 @@ class _DetailPageState extends State<DetailPage> {
     );
   }
 
+  /// "S1:E3" 这种集数标记，剧集详情页播放按钮用来标出"接下来是这集"。
+  String _episodeCode(MediaItem item) {
+    final s = item.parentIndexNumber, e = item.indexNumber;
+    return (s != null && e != null) ? 'S$s:E$e' : item.name;
+  }
+
   Widget _buildPlayButtons(MediaItem item) {
     final hasResume = item.resumePosition > Duration.zero;
     final tvMode = context.watch<AppState>().tvMode;
@@ -281,11 +305,16 @@ class _DetailPageState extends State<DetailPage> {
           child: FilledButton.icon(
             style: primaryCtaStyle(),
             autofocus: tvMode,
-            onPressed: () => _play(item),
+            onPressed: () {
+              HapticFeedback.lightImpact();
+              _play(item);
+            },
             icon: const Icon(Icons.play_arrow),
             label: Text(hasResume
-                ? '继续播放 ${formatDuration(item.resumePosition)}'
-                : '播放'),
+                ? L.of(context).resumePlayback(formatDuration(item.resumePosition))
+                : (item.type == 'Episode'
+                    ? L.of(context).playEpisode(_episodeCode(item))
+                    : L.of(context).play)),
           ),
         ),
         if (hasResume) ...[
@@ -295,7 +324,7 @@ class _DetailPageState extends State<DetailPage> {
             child: OutlinedButton.icon(
               onPressed: () => _play(item, fromStart: true),
               icon: const Icon(Icons.replay),
-              label: const Text('从头播放'),
+              label: Text(L.of(context).playFromStart),
             ),
           ),
         ],
@@ -376,7 +405,7 @@ class _DetailPageState extends State<DetailPage> {
             ),
             subtitle: Row(
               children: [
-                if (ep.runTime != null) Text(formatRuntime(ep.runTime!)),
+                if (ep.runTime != null) Text(formatRuntime(context, ep.runTime!)),
                 if (ep.played) ...[
                   const SizedBox(width: 8),
                   Icon(Icons.check_circle, size: 14, color: scheme.primary),

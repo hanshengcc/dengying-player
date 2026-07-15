@@ -1,6 +1,8 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
+
 /// 首页横向滚动区块：标题 + 横向卡片列表。
 ///
 /// 桌面端体验：支持鼠标拖拽滚动；悬停时显示左右翻页箭头，
@@ -62,7 +64,8 @@ class _SectionRowState extends State<SectionRow> {
                         ?.copyWith(fontWeight: FontWeight.w600)),
               ),
               if (widget.onMore != null)
-                TextButton(onPressed: widget.onMore, child: const Text('更多')),
+                TextButton(
+                    onPressed: widget.onMore, child: Text(L.of(context).more)),
             ],
           ),
         ),

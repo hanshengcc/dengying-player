@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../api/models.dart';
 import '../theme.dart';
@@ -77,7 +78,10 @@ class _PosterCardState extends State<PosterCard> {
           curve: AppMotion.emphasized,
           child: InkWell(
             autofocus: widget.autofocus,
-            onTap: widget.onTap,
+            onTap: () {
+              HapticFeedback.selectionClick();
+              widget.onTap();
+            },
             onFocusChange: _onFocusChange,
             borderRadius: BorderRadius.circular(AppRadius.md),
             child: Column(

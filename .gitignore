@@ -8,6 +8,9 @@
 /build/
 *.iml
 
+# l10n：由 lib/l10n/*.arb 通过 `generate: true` 自动生成，别提交生成产物
+lib/l10n/app_localizations*.dart
+
 # --- Android ---
 android/.gradle/
 android/local.properties

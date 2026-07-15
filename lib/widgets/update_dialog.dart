@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../l10n/app_localizations.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import '../utils/update_checker.dart';
@@ -16,7 +17,7 @@ Future<void> showUpdateDialog(BuildContext context, UpdateInfo info) {
   return showDialog(
     context: context,
     builder: (context) => AlertDialog(
-      title: Text('发现新版本 v${info.version}'),
+      title: Text(L.of(context).newVersionFound(info.version)),
       content: SizedBox(
         width: 360,
         child: SingleChildScrollView(
@@ -28,7 +29,7 @@ Future<void> showUpdateDialog(BuildContext context, UpdateInfo info) {
                 Text(info.notes, style: Theme.of(context).textTheme.bodyMedium),
               if (tvMode) ...[
                 const SizedBox(height: 16),
-                const Text('手机扫码下载新版本：'),
+                Text(L.of(context).scanToDownload),
                 const SizedBox(height: 12),
                 Center(
                   child: Container(
@@ -49,7 +50,7 @@ Future<void> showUpdateDialog(BuildContext context, UpdateInfo info) {
         TextButton(
           autofocus: tvMode,
           onPressed: () => Navigator.of(context).pop(),
-          child: Text(tvMode ? '关闭' : '以后再说'),
+          child: Text(tvMode ? L.of(context).close : L.of(context).later),
         ),
         if (!tvMode)
           FilledButton(
@@ -58,7 +59,7 @@ Future<void> showUpdateDialog(BuildContext context, UpdateInfo info) {
               launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
               Navigator.of(context).pop();
             },
-            child: const Text('去下载'),
+            child: Text(L.of(context).download),
           ),
       ],
     ),
