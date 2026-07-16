@@ -11,8 +11,9 @@ import '../api/emby_api.dart';
 import '../api/models.dart';
 import '../l10n/app_localizations.dart';
 import '../state/app_state.dart';
-import '../utils/errors.dart';
 import '../theme.dart';
+import '../utils/errors.dart';
+import '../utils/language_names.dart';
 
 /// 播放器页：mpv 内核（media_kit），直连播放，
 /// 每 10 秒向服务器上报进度，退出时上报停止位置。
@@ -290,8 +291,7 @@ class _PlayerPageState extends State<PlayerPage> {
       final track =
           SubtitleTrack.uri(url, title: s.displayTitle, language: s.language);
       subtitleOptions.add(_TvMenuOption(
-        L.of(context)
-            .externalSubtitle(s.displayTitle ?? s.language ?? '${s.index}'),
+        L.of(context).externalSubtitle(_externalSubtitleName(s)),
         current.subtitle.id == url,
         () => _player.setSubtitleTrack(track),
       ));
@@ -381,6 +381,8 @@ class _PlayerPageState extends State<PlayerPage> {
   // ---------------- 音轨 / 字幕 / 倍速 ----------------
 
   /// AudioTrack / SubtitleTrack 无公共父类，动态取 id/title/language。
+  /// title 里常混着 Forced/SDH 这类英文缩写标记，language 是原始 ISO
+  /// 码（如 "tha"）——都换成本地化友好说法，而不是服务器原文直出。
   String _trackLabel(dynamic t) {
     final String id = t.id as String;
     if (id == 'auto') return L.of(context).subtitleAuto;
@@ -388,10 +390,24 @@ class _PlayerPageState extends State<PlayerPage> {
     final String? title = t.title as String?;
     final String? language = t.language as String?;
     final parts = [
-      if (title != null && title.isNotEmpty) title,
-      if (language != null && language.isNotEmpty) language,
+      if (title != null && title.isNotEmpty)
+        friendlySubtitleFlag(context, title),
+      if (language != null && language.isNotEmpty)
+        languageDisplayName(context, language),
     ];
     return parts.isEmpty ? L.of(context).trackFallback(id) : parts.join(' · ');
+  }
+
+  /// 外挂字幕没有 displayTitle 时，宁可显示友好语言名也不要显示原始
+  /// ISO 码；连语言都没有才退化到序号。
+  String _externalSubtitleName(MediaStreamInfo s) {
+    if (s.displayTitle != null && s.displayTitle!.isNotEmpty) {
+      return s.displayTitle!;
+    }
+    if (s.language != null && s.language!.isNotEmpty) {
+      return languageDisplayName(context, s.language!);
+    }
+    return '${s.index}';
   }
 
   PopupMenuItem<T> _menuItem<T>(T value, String label, bool selected) =>
@@ -442,8 +458,7 @@ class _PlayerPageState extends State<PlayerPage> {
             items.add(_menuItem(
               SubtitleTrack.uri(url,
                   title: s.displayTitle, language: s.language),
-              L.of(context)
-                  .externalSubtitle(s.displayTitle ?? s.language ?? '${s.index}'),
+              L.of(context).externalSubtitle(_externalSubtitleName(s)),
               current.id == url,
             ));
           }
@@ -912,6 +927,10 @@ class _TvSettingsDialogState extends State<_TvSettingsDialog> {
   int _tabIndex = 0;
   bool _onTabs = true;
   int _itemIndex = 0;
+  // 列表可能比面板高（比如字幕轨一多），焦点项要跟着自动滚进可视区域，
+  // 否则选到看不见的地方，遥控器按了跟没反应一样。每行一个 key 用来
+  // 定位它的 context 给 Scrollable.ensureVisible。
+  List<GlobalKey> _itemKeys = [];
 
   List<_TvMenuOption> get _currentOptions =>
       _tabs.isEmpty ? const [] : _tabs[_tabIndex].$2;
@@ -928,8 +947,10 @@ class _TvSettingsDialogState extends State<_TvSettingsDialog> {
         break;
       }
     }
+    _itemKeys = List.generate(_currentOptions.length, (_) => GlobalKey());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _focusNode.requestFocus();
+      _ensureVisible();
     });
   }
 
@@ -939,11 +960,23 @@ class _TvSettingsDialogState extends State<_TvSettingsDialog> {
     super.dispose();
   }
 
+  void _ensureVisible() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _itemIndex >= _itemKeys.length) return;
+      final ctx = _itemKeys[_itemIndex].currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(ctx,
+            alignment: 0.5, duration: const Duration(milliseconds: 150));
+      }
+    });
+  }
+
   void _changeTab(int delta) {
     if (_tabs.length < 2) return;
     setState(() {
       _tabIndex = (_tabIndex + delta).clamp(0, _tabs.length - 1);
       _itemIndex = 0;
+      _itemKeys = List.generate(_currentOptions.length, (_) => GlobalKey());
     });
   }
 
@@ -951,6 +984,7 @@ class _TvSettingsDialogState extends State<_TvSettingsDialog> {
     final n = _currentOptions.length;
     if (n == 0) return;
     setState(() => _itemIndex = (_itemIndex + delta).clamp(0, n - 1));
+    _ensureVisible();
   }
 
   void _activate() {
@@ -980,6 +1014,7 @@ class _TvSettingsDialogState extends State<_TvSettingsDialog> {
     if (key == LogicalKeyboardKey.arrowDown) {
       if (_onTabs) {
         setState(() => _onTabs = false);
+        _ensureVisible();
       } else {
         _moveItem(1);
       }
@@ -998,6 +1033,7 @@ class _TvSettingsDialogState extends State<_TvSettingsDialog> {
     if (_isConfirm(key)) {
       if (_onTabs) {
         setState(() => _onTabs = false);
+        _ensureVisible();
       } else {
         _activate();
       }
@@ -1057,6 +1093,7 @@ class _TvSettingsDialogState extends State<_TvSettingsDialog> {
                     final o = _currentOptions[i];
                     final focused = !_onTabs && i == _itemIndex;
                     return Container(
+                      key: i < _itemKeys.length ? _itemKeys[i] : null,
                       color: focused
                           ? scheme.primary.withValues(alpha: 0.18)
                           : null,
@@ -1068,6 +1105,8 @@ class _TvSettingsDialogState extends State<_TvSettingsDialog> {
                                 ? scheme.primary
                                 : Colors.transparent),
                         title: Text(o.label,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style: focused
                                 ? TextStyle(
                                     color: scheme.primary,
